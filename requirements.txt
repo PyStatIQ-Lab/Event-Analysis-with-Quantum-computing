@@ -8,3 +8,7 @@ scikit-learn
 openpyxl
 fpdf
 plotly
+qiskit
+qiskit-finance
+qiskit-machine-learning
+qiskit-optimization
