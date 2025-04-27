@@ -15,14 +15,16 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # Quantum Computing Imports
-from qiskit import Aer, QuantumCircuit, execute
-from qiskit.algorithms import AmplitudeEstimation
-from qiskit_finance.applications import PortfolioOptimization
+from qiskit import Aer
+from qiskit import QuantumCircuit
+from qiskit.primitives import Sampler
+from qiskit_algorithms import AmplitudeEstimation
+from qiskit_finance.applications.portfolio_optimization import PortfolioOptimization
 from qiskit_optimization.converters import QuadraticProgramToQubo
 from qiskit.utils import QuantumInstance
-import qiskit.algorithms.optimizers as optimizers
-from qiskit_machine_learning.algorithms import QSVC
 from qiskit.circuit.library import ZZFeatureMap
+from qiskit.algorithms.optimizers import SLSQP
+from qiskit_machine_learning.algorithms import QSVC
 from qiskit.visualization import plot_histogram
 
 # ========== MUST BE THE FIRST STREAMLIT COMMAND ==========
@@ -142,51 +144,43 @@ def quantum_risk_score(answers):
         qc = QuantumCircuit(4)
         
         # Encode answers into quantum state
-        # Risk tolerance (0-2)
         if answers['risk_tolerance'] == 'Low':
-            qc.rx(0.1, 0)  # Small rotation for low risk
+            qc.rx(0.1, 0)
         elif answers['risk_tolerance'] == 'Medium':
-            qc.rx(0.5, 0)  # Medium rotation
+            qc.rx(0.5, 0)
         else:
-            qc.rx(1.0, 0)  # Large rotation for high risk
+            qc.rx(1.0, 0)
             
-        # Investment horizon (0-3)
         horizon_map = {'<1 year': 0.1, '1-3 years': 0.3, '3-5 years': 0.6, '5+ years': 1.0}
         qc.ry(horizon_map[answers['investment_horizon']], 1)
         
-        # Experience (0-2)
         exp_map = {'None': 0.1, 'Some': 0.5, 'Experienced': 1.0}
         qc.rz(exp_map[answers['investment_experience']], 2)
         
-        # Reaction (0-3)
         react_map = {'Sell all': 0.1, 'Sell some': 0.3, 'Hold': 0.6, 'Buy more': 1.0}
         qc.rx(react_map[answers['market_drop_reaction']], 3)
         
-        # Entangle qubits to capture interactions between factors
         qc.cx(0, 1)
         qc.cx(1, 2)
         qc.cx(2, 3)
-        
-        # Measure all qubits
         qc.measure_all()
         
-        # Execute on simulator
+        # Use Sampler instead of execute
         backend = Aer.get_backend('qasm_simulator')
-        job = execute(qc, backend, shots=1024)
+        sampler = Sampler(backend=backend)
+        job = sampler.run(qc, shots=1024)
         result = job.result()
-        counts = result.get_counts()
+        counts = result.quasi_dists[0].binary_probabilities()
         
-        # Visualize the quantum results
+        # Visualize results
         fig, ax = plt.subplots()
         plot_histogram(counts, ax=ax)
         st.pyplot(fig)
         
-        # Convert measurement to risk score (0-10)
         max_count = max(counts.values())
         most_likely = [k for k, v in counts.items() if v == max_count][0]
-        score = int(most_likely, 2)  # Convert binary to decimal
+        score = int(most_likely, 2)
         
-        # Adjust for age
         age = int(answers['age'])
         if age > 60:
             score = max(1, score - 2)
@@ -197,7 +191,7 @@ def quantum_risk_score(answers):
         
     except Exception as e:
         st.warning(f"Quantum risk scoring failed, falling back to classical: {e}")
-        return calculate_risk_score(answers)  # Fall back to classical
+        return calculate_risk_score(answers)
 
 def get_volatility_metrics(ticker):
     try:
